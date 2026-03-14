@@ -1,0 +1,314 @@
+<!DOCTYPE html> 
+<html lang="hi"> 
+<head> 
+    <meta charset="UTF-8"> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>Tamir-Cloud Pro | डीबग मोड</title> 
+    <style> 
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; } 
+        body { background: #f4f7f6; padding: 20px; display: flex; flex-direction: column; align-items: center; } 
+        
+        .main-card { background: white; border-radius: 30px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); width: 100%; max-width: 480px; padding: 30px; margin-bottom: 25px; border: 1px solid #e0e0e0; } 
+        h2 { color: #1a73e8; text-align: center; margin-bottom: 20px; font-size: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; } 
+        h2 span { background: #ea4335; color: white; font-size: 12px; padding: 4px 12px; border-radius: 40px; } 
+        
+        .upload-box { background: #fbfcfe; border: 2px dashed #1a73e8; border-radius: 20px; padding: 25px; text-align: center; transition: 0.3s; } 
+        .upload-box:hover { background: #f1f6ff; } 
+        input[type="file"] { width: 100%; margin-bottom: 15px; cursor: pointer; padding: 10px; border: 1px solid #ddd; border-radius: 8px; } 
+        
+        .preview-container { margin: 15px 0; display: none; } 
+        .preview-container img { max-width: 100%; max-height: 200px; border-radius: 12px; border: 3px solid #1a73e8; } 
+        
+        #status { font-size: 14px; color: #444; margin: 15px 0; padding: 12px; border-radius: 12px; background: #eef4ff; display: block; min-height: 60px; white-space: pre-line; } 
+        
+        .progress-bar { width: 100%; height: 10px; background: #e0e0e0; border-radius: 5px; margin: 15px 0; overflow: hidden; display: block; } 
+        .progress-fill { height: 100%; background: #1a73e8; width: 0%; transition: width 0.3s; } 
+        
+        .debug-box { background: #1e1e2f; color: #00ff00; padding: 15px; border-radius: 10px; font-family: monospace; font-size: 12px; margin-top: 15px; display: block; max-height: 200px; overflow-y: auto; text-align: left; } 
+        
+        .btn-primary { width: 100%; background: #1a73e8; color: white; padding: 16px; border: none; border-radius: 50px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(26,115,232,0.3); display: block; transition: 0.2s; } 
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; } 
+ 
+        .list-container { width: 100%; max-width: 480px; } 
+        .list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; } 
+        .list-header h3 { font-size: 18px; color: #333; } 
+        .count-badge { background: #1a73e8; color: white; padding: 4px 12px; border-radius: 40px; font-size: 13px; } 
+        
+        .photo-row { background: white; border-radius: 18px; padding: 12px 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); } 
+        .photo-row img { width: 60px; height: 60px; object-fit: cover; border-radius: 12px; cursor: pointer; } 
+        .photo-info { flex: 1; } 
+        .date-text { font-size: 12px; color: #666; } 
+        
+        .action-btns { display: flex; gap: 6px; } 
+        .btn-copy { background: #e8f4ff; color: #1a73e8; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; } 
+        .btn-del { background: #fff1f0; color: #f5222d; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; } 
+    </style> 
+</head> 
+<body> 
+ 
+<div class="main-card"> 
+    <h2>🌩️ Tamir-Cloud <span>डीबग मोड</span></h2> 
+    <div class="upload-box"> 
+        <input type="file" id="imageInput" accept="image/*"> 
+        <div class="preview-container" id="previewContainer"> 
+            <img id="preview" src=""> 
+        </div> 
+        <div class="progress-bar" id="progressBar"> 
+            <div class="progress-fill" id="progressFill"></div> 
+        </div> 
+        <div id="status">⏳ फोटो चुनें...</div> 
+        <div id="debugBox" class="debug-box">डीबग मैसेज यहाँ दिखेंगे...</div> 
+        <button id="saveBtn" class="btn-primary" disabled>☁️ क्लाउड में सुरक्षित करें</button> 
+    </div> 
+</div> 
+ 
+<div class="list-container"> 
+    <div class="list-header"> 
+        <h3>📸 आपकी लाइब्रेरी</h3> 
+        <span class="count-badge" id="fileCount">0</span> 
+    </div> 
+    <div id="photoList"></div> 
+</div> 
+ 
+<script type="module"> 
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"; 
+    import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js"; 
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"; 
+ 
+    const firebaseConfig = { 
+        apiKey: "AIzaSyAv2kO-fV5oKa4_mQj5TGBQGMUs142N4lc", 
+        authDomain: "tamir-cloud.firebaseapp.com", 
+        projectId: "tamir-cloud", 
+        storageBucket: "tamir-cloud.firebasestorage.app", 
+        messagingSenderId: "216452127534", 
+        appId: "1:216452127534:web:b8cb8e687f44eded0ef8bf" 
+    }; 
+ 
+    // डीबग फंक्शन 
+    function debug(message) { 
+        const debugBox = document.getElementById('debugBox'); 
+        debugBox.innerHTML += `<br>👉 ${new Date().toLocaleTimeString()}: ${message}`; 
+        debugBox.scrollTop = debugBox.scrollHeight; 
+        console.log(message); 
+    } 
+ 
+    debug("🔄 ऐप शुरू हो रहा है..."); 
+    
+    try { 
+        const app = initializeApp(firebaseConfig); 
+        debug("✅ Firebase Initialize हुआ"); 
+        
+        const storage = getStorage(app); 
+        debug("✅ Storage Initialize हुआ"); 
+        
+        const db = getFirestore(app); 
+        debug("✅ Firestore Initialize हुआ"); 
+    } catch (e) { 
+        debug("❌ Initialize Error: " + e.message); 
+    } 
+ 
+    // DOM Elements 
+    const imageInput = document.getElementById('imageInput'); 
+    const saveBtn = document.getElementById('saveBtn'); 
+    const status = document.getElementById('status'); 
+    const photoList = document.getElementById('photoList'); 
+    const previewContainer = document.getElementById('previewContainer'); 
+    const preview = document.getElementById('preview'); 
+    const progressBar = document.getElementById('progressBar'); 
+    const progressFill = document.getElementById('progressFill'); 
+    const fileCount = document.getElementById('fileCount'); 
+ 
+    let selectedFile = null; 
+    let compressedFile = null; 
+ 
+    // File Selection 
+    imageInput.onchange = (e) => { 
+        const file = e.target.files[0]; 
+        if (!file) return; 
+ 
+        selectedFile = file; 
+        debug("📁 फाइल चुनी गई: " + file.name + " (" + (file.size/1024).toFixed(2) + " KB)"); 
+        
+        // Preview 
+        const reader = new FileReader(); 
+        reader.onload = (ev) => { 
+            preview.src = ev.target.result; 
+            previewContainer.style.display = 'block'; 
+            debug("🖼️ प्रीव्यू तैयार"); 
+        }; 
+        reader.readAsDataURL(file); 
+ 
+        status.innerText = "⏳ कंप्रेस हो रहा है..."; 
+        saveBtn.disabled = true; 
+ 
+        // Compress if needed 
+        if (file.size > 1_000_000) { 
+            compressImage(file).then(blob => { 
+                compressedFile = blob; 
+                status.innerText = `✅ कंप्रेस हो गया: ${(blob.size / 1024).toFixed(1)} KB`; 
+                saveBtn.disabled = false; 
+                debug("✅ कंप्रेस सफल: " + (blob.size/1024).toFixed(2) + " KB"); 
+            }).catch((err) => { 
+                compressedFile = file; 
+                status.innerText = "⚠️ कंप्रेस फेल, बिना कंप्रेस अपलोड होगा"; 
+                saveBtn.disabled = false; 
+                debug("⚠️ कंप्रेस फेल: " + err); 
+            }); 
+        } else { 
+            compressedFile = file; 
+            status.innerText = "✅ फोटो तैयार है"; 
+            saveBtn.disabled = false; 
+            debug("✅ बिना कंप्रेस तैयार"); 
+        } 
+    }; 
+ 
+    // Compress Function 
+    function compressImage(file) { 
+        return new Promise((resolve, reject) => { 
+            const reader = new FileReader(); 
+            reader.readAsDataURL(file); 
+            reader.onload = (e) => { 
+                const img = new Image(); 
+                img.src = e.target.result; 
+                img.onload = () => { 
+                    const canvas = document.createElement('canvas'); 
+                    const MAX = 1200; 
+                    let width = img.width; 
+                    let height = img.height; 
+                    
+                    if (width > height && width > MAX) { 
+                        height *= MAX / width; 
+                        width = MAX; 
+                    } else if (height > MAX) { 
+                        width *= MAX / height; 
+                        height = MAX; 
+                    } 
+                    
+                    canvas.width = width; 
+                    canvas.height = height; 
+                    canvas.getContext('2d').drawImage(img, 0, 0, width, height); 
+                    
+                    canvas.toBlob((blob) => { 
+                        if (blob) resolve(blob); 
+                        else reject("Blob नहीं बना"); 
+                    }, 'image/jpeg', 0.7); 
+                }; 
+                img.onerror = reject; 
+            }; 
+            reader.onerror = reject; 
+        }); 
+    } 
+ 
+    // Save Button 
+    saveBtn.onclick = async () => { 
+        if (!compressedFile) return; 
+        
+        debug("🚀 अपलोड शुरू..."); 
+        saveBtn.disabled = true; 
+        saveBtn.innerText = "⏫ अपलोड हो रहा है..."; 
+        status.innerText = "📤 Storage में अपलोड शुरू..."; 
+ 
+        const timestamp = Date.now(); 
+        const safeFileName = selectedFile.name.replace(/[^a-zA-Z0-9]/g, '_') + '_' + timestamp; 
+        const filePath = `test_photos/${safeFileName}.jpg`; 
+        
+        debug("📁 File Path: " + filePath); 
+ 
+        try { 
+            // पहले Storage रेफरेंस बनाएं 
+            const storage = getStorage(); 
+            const fileRef = ref(storage, filePath); 
+            debug("📦 Storage Ref बन गया"); 
+ 
+            // अपलोड शुरू 
+            debug("⬆️ uploadBytes() कॉल हो रहा है..."); 
+            const uploadResult = await uploadBytes(fileRef, compressedFile); 
+            debug("✅ uploadBytes() सफल! बाइट्स: " + uploadResult.metadata.size); 
+ 
+            // URL लें 
+            debug("🔗 Download URL ले रहे हैं..."); 
+            const downloadURL = await getDownloadURL(fileRef); 
+            debug("✅ URL मिल गया: " + downloadURL.substring(0, 50) + "..."); 
+ 
+            // Firestore में सेव 
+            debug("📝 Firestore में सेव कर रहे हैं..."); 
+            const db = getFirestore(); 
+            const photosCol = collection(db, "test_photos"); 
+            
+            const docRef = await addDoc(photosCol, { 
+                url: downloadURL, 
+                path: filePath, 
+                fileName: selectedFile.name, 
+                time: new Date().toLocaleString('hi-IN'), 
+                timestamp: Date.now() 
+            }); 
+            
+            debug("✅ Firestore डॉक्यूमेंट ID: " + docRef.id); 
+            status.innerText = "✅ सफलतापूर्वक सेव हुआ!"; 
+             
+            // Reset 
+            saveBtn.style.display = 'none'; 
+            previewContainer.style.display = 'none'; 
+            imageInput.value = ''; 
+            selectedFile = null; 
+            compressedFile = null; 
+            
+        } catch (error) { 
+            debug("❌ ERROR: " + error.message); 
+            debug("📋 Error Code: " + error.code); 
+            debug("📋 Error Details: " + JSON.stringify(error)); 
+            status.innerText = "❌ अपलोड फेल: " + error.message; 
+            alert("अपलोड फेल!\n\nError: " + error.message + "\n\nडीबग बॉक्स चेक करें"); 
+        } 
+        
+        saveBtn.disabled = false; 
+        saveBtn.innerText = "☁️ क्लाउड में सुरक्षित करें"; 
+    }; 
+ 
+    // Real-time List 
+    try { 
+        const db = getFirestore(); 
+        const photosCol = collection(db, "test_photos"); 
+        const q = query(photosCol, orderBy("timestamp", "desc")); 
+        
+        onSnapshot(q, (snapshot) => { 
+            photoList.innerHTML = ''; 
+            fileCount.innerText = snapshot.size; 
+            
+            if (snapshot.empty) { 
+                photoList.innerHTML = "<p style='text-align:center; color:#999;'>📭 कोई फोटो नहीं</p>"; 
+                return; 
+            } 
+ 
+            snapshot.forEach((doc) => { 
+                const data = doc.data(); 
+                const id = doc.id; 
+ 
+                const div = document.createElement('div'); 
+                div.className = 'photo-row'; 
+                div.innerHTML = ` 
+                    <img src="${data.url}" onclick="window.open('${data.url}')"> 
+                    <div class="photo-info"> 
+                        <div class="date-text">📅 ${data.time || ''}</div> 
+                    </div> 
+                    <div class="action-btns"> 
+                        <button class="btn-copy" onclick="copyText('${data.url}')">📋</button> 
+                    </div> 
+                `; 
+                photoList.appendChild(div); 
+            }); 
+        }, (error) => { 
+            debug("❌ Firestore Listen Error: " + error.message); 
+        }); 
+    } catch (e) { 
+        debug("❌ Firestore Setup Error: " + e.message); 
+    } 
+ 
+    window.copyText = (text) => { 
+        navigator.clipboard.writeText(text); 
+        alert("लिंक कॉपी हो गया!"); 
+    }; 
+</script> 
+ 
+</body> 
+</html>
